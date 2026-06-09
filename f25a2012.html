@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Definite Integral Calculator</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --background: #f8fafc;
+            --card-bg: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--background);
+            color: var(--text);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            background: var(--card-bg);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin-top: 0;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .controls {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        label {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #475569;
+        }
+
+        input {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            border-color: var(--primary);
+        }
+
+        .limits-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        button {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 8px;
+        }
+
+        button:hover {
+            background-color: var(--primary-hover);
+        }
+
+        .result-card {
+            background: #f1f5f9;
+            padding: 12px;
+            border-radius: 6px;
+            border-left: 4px solid var(--primary);
+            font-size: 1.1rem;
+            font-weight: 500;
+            margin-top: 8px;
+        }
+
+        .graph-container {
+            position: relative;
+            width: 100%;
+            height: 400px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            background: #ffffff;
+        }
+
+        .error {
+            color: #dc2626;
+            font-size: 0.85rem;
+            margin-top: 4px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Definite Integral & Area Visualizer</h1>
+    
+    <div class="dashboard">
+        <div class="controls">
+            <div class="input-group">
+                <label for="functionInput">Function f(x)</label>
+                <input type="text" id="functionInput" value="x * sin(x) + 2" placeholder="e.g., x^2, sin(x)">
+                <div id="errorMsg" class="error">Invalid math syntax. Use basic operators like +, -, *, /, or Math functions.</div>
+            </div>
+
+            <div class="limits-row">
+                <div class="input-group">
+                    <label for="limitA">Lower Limit (a)</label>
+                    <input type="number" id="limitA" value="0" step="any">
+                </div>
+                <div class="input-group">
+                    <label for="limitB">Upper Limit (b)</label>
+                    <input type="number" id="limitB" value="6" step="any">
+                </div>
+            </div>
+
+            <button id="calculateBtn">Calculate & Animate</button>
+
+            <div class="result-card">
+                <div>Area (∫): <span id="resultValue">0.00</span></div>
+            </div>
+        </div>
+
+        <div class="graph-container">
+            <canvas id="graphCanvas"></canvas>
+        </div>
+    </div>
+</div>
+
+<script>
+    let chart;
+    let animationFrameId;
+    let currentProgress = 0;
+
+    // A simple, safe math parser turning string inputs into JS evaluable code
+    // Substitutes 'x' with standard variables and wraps common functions in 'Math.'
+    function safeEval(expression, xValue) {
+        let parsed = expression
+            .replace(/\^/g, '**') // handle powers
+            .replace(/\bx\b/g, `(${xValue})`) // wrap x values securely
+            .replace(/\b(sin|cos|tan|log|exp|sqrt|pi|E|pow|abs)\b/g, 'Math.$1');
+        
+        // Final fallback parsing architecture
+        return Function(`"use strict"; return (${parsed})`)();
+    }
+
+    // Riemann sum architecture parsing area approximations
+    function calculateIntegral(expr, a, b, intervals = 1000) {
+        const dx = (b - a) / intervals;
+        let sum = 0;
+        for (let i = 0; i < intervals; i++) {
+            const x = a + i * dx + dx / 2; // Midpoint rule
+            sum += safeEval(expr, x) * dx;
+        }
+        return sum;
+    }
+
+    function initChart() {
+        const ctx = document.getElementById('graphCanvas').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                datasets: [
+                    {
+                        label: 'f(x)',
+                        data: [],
+                        borderColor: '#4f46e5',
+                        borderWidth: 2.5,
+                        pointRadius: 0,
+                        fill: false
+                    },
+                    {
+                        label: 'Integrated Area',
+                        data: [],
+                        backgroundColor: 'rgba(79, 70, 229, 0.25)',
+                        borderColor: 'transparent',
+                        pointRadius: 0,
+                        fill: 'origin'
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: { type: 'linear', position: 'bottom', grid: { color: '#f1f5f9' } },
+                    y: { type: 'linear', grid: { color: '#f1f5f9' } }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    function updatePlot() {
+        cancelAnimationFrame(animationFrameId);
+        const expr = document.getElementById('functionInput').value;
+        const a = parseFloat(document.getElementById('limitA').value);
+        const b = parseFloat(document.getElementById('limitB').value);
+        const errorMsg = document.getElementById('errorMsg');
+
+        if (isNaN(a) || isNaN(b) || a >= b) {
+            alert("Please ensure limit (b) is greater than limit (a).");
+            return;
+        }
+
+        errorMsg.style.display = 'none';
+
+        // Setup viewing window padding around bounding limits
+        const pad = (b - a) * 0.4 || 2; 
+        const viewMin = a - pad;
+        const viewMax = b + pad;
+        const steps = 150;
+
+        const mainCurveData = [];
+        
+        try {
+            // Generate basic plot dataset curve geometry
+            for (let i = 0; i <= steps; i++) {
+                const x = viewMin + (i / steps) * (viewMax - viewMin);
+                const y = safeEval(expr, x);
+                if (!isNaN(y) && isFinite(y)) {
+                    mainCurveData.push({ x, y });
+                }
+            }
+
+            // Calculate exact total integration footprint
+            const totalArea = calculateIntegral(expr, a, b);
+            document.getElementById('resultValue').innerText = totalArea.toFixed(4);
+
+            chart.data.datasets[0].data = mainCurveData;
+            
+            // Begin interpolation animation sequences
+            const animationDuration = 60; // frames
+            let currentFrame = 0;
+
+            function animateFill() {
+                currentFrame++;
+                const progress = currentFrame / animationDuration;
+                const currentRightBoundary = a + (b - a) * progress;
+
+                const fillData = [];
+                // Plot filling points sequentially matching animation frame ticks
+                const fillSteps = 100;
+                for (let i = 0; i <= fillSteps; i++) {
+                    const x = a + (i / fillSteps) * (currentRightBoundary - a);
+                    const y = safeEval(expr, x);
+                    fillData.push({ x, y });
+                }
+
+                chart.data.datasets[1].data = fillData;
+                chart.update('none'); // Update smoothly without charting native jumps
+
+                if (currentFrame < animationDuration) {
+                    animationFrameId = requestAnimationFrame(animateFill);
+                }
+            }
+
+            animateFill();
+
+        } catch (err) {
+            errorMsg.style.display = 'block';
+            console.error(err);
+        }
+    }
+
+    document.getElementById('calculateBtn').addEventListener('click', updatePlot);
+    
+    // Initial Run on Document Load
+    window.onload = () => {
+        initChart();
+        updatePlot();
+    };
+</script>
+
+</body>
+</html>
